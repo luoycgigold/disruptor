@@ -1,17 +1,23 @@
 package com.lmax.disruptor;
 
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.locks.Condition;
 import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReentrantLock;
 
-public class TimeoutBlockingWaitStrategy implements WaitStrategy
+/**
+ * Variation of the {@link TimeoutBlockingWaitStrategy} that attempts to elide conditional wake-ups
+ * when the lock is uncontended.
+ */
+public class LiteTimeoutBlockingWaitStrategy implements WaitStrategy
 {
     private final Lock lock = new ReentrantLock();
     private final Condition processorNotifyCondition = lock.newCondition();
+    private final AtomicBoolean signalNeeded = new AtomicBoolean(false);
     private final long timeoutInNanos;
 
-    public TimeoutBlockingWaitStrategy(final long timeout, final TimeUnit units)
+    public LiteTimeoutBlockingWaitStrategy(final long timeout, final TimeUnit units)
     {
         timeoutInNanos = units.toNanos(timeout);
     }
@@ -34,6 +40,8 @@ public class TimeoutBlockingWaitStrategy implements WaitStrategy
             {
                 while (cursorSequence.get() < sequence)
                 {
+                    signalNeeded.getAndSet(true);
+
                     barrier.checkAlert();
                     nanos = processorNotifyCondition.awaitNanos(nanos);
                     if (nanos <= 0)
@@ -59,21 +67,24 @@ public class TimeoutBlockingWaitStrategy implements WaitStrategy
     @Override
     public void signalAllWhenBlocking()
     {
-        lock.lock();
-        try
+        if (signalNeeded.getAndSet(false))
         {
-            processorNotifyCondition.signalAll();
-        }
-        finally
-        {
-            lock.unlock();
+            lock.lock();
+            try
+            {
+                processorNotifyCondition.signalAll();
+            }
+            finally
+            {
+                lock.unlock();
+            }
         }
     }
 
     @Override
     public String toString()
     {
-        return "TimeoutBlockingWaitStrategy{" +
+        return "LiteTimeoutBlockingWaitStrategy{" +
             "processorNotifyCondition=" + processorNotifyCondition +
             '}';
     }

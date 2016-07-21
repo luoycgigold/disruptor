@@ -72,4 +72,12 @@ public final class BlockingWaitStrategy implements WaitStrategy
             lock.unlock();
         }
     }
+
+    @Override
+    public String toString()
+    {
+        return "BlockingWaitStrategy{" +
+            "processorNotifyCondition=" + processorNotifyCondition +
+            '}';
+    }
 }
